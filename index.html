@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>สแกนยืนยันสินค้า</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --p:#146C74; --pd:#0E4C52; --pl:#E4F1F2; --t:#1C2126; --t2:#667085; --bg:#0C1214;
+          --ok:#146C74; --warn:#9A6B12; --warnl:#FDF3E2; --err:#B3261E; --errl:#FBEAEA; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: #fff;
+               font-family: 'Sarabun', -apple-system, 'Helvetica Neue', sans-serif; }
+  body { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); display: flex; flex-direction: column; }
+  header { padding: 14px 16px 10px; }
+  header .name { font-weight: 700; font-size: 1.05rem; line-height: 1.35; }
+  header .target { margin-top: 4px; font-size: 0.95rem; color: #C9D6D8; word-break: break-all; }
+  header .target b { color: #fff; }
+  .stage { position: relative; flex: 1 1 auto; min-height: 260px; background: #000; overflow: hidden; }
+  #reader { width: 100%; height: 100%; }
+  #reader video { width: 100% !important; height: 100% !important; object-fit: cover; }
+  #reader img, #reader__dashboard, #reader__header_message { display: none !important; }
+  .mask { position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+  .box { width: 88%; height: 34%; max-height: 220px; border-radius: 14px;
+         box-shadow: 0 0 0 9999px rgba(0,0,0,0.45); border: 3px solid rgba(255,255,255,0.9); position: relative; }
+  .laser { position: absolute; left: 4%; right: 4%; height: 2px; top: 50%; background: #FF3B30;
+           box-shadow: 0 0 10px 2px rgba(255,59,48,0.8); animation: lz 1.6s ease-in-out infinite; }
+  @keyframes lz { 0%,100% { top: 15%; } 50% { top: 85%; } }
+  .box.hit { border-color: #34C759; }
+  .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .3s; }
+  .flash.on { opacity: .8; transition: none; }
+  .tools { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 8px; }
+  .tools button { width: 48px; height: 48px; border-radius: 50%; border: 0; font-size: 1.3rem;
+                  background: rgba(0,0,0,0.55); color: #fff; }
+  .tools button.on { background: #fff; color: #000; }
+  .panel { background: #fff; color: var(--t); border-radius: 18px 18px 0 0; padding: 14px 16px 18px; }
+  .status { padding: 10px 12px; border-radius: 10px; background: #EEF1F4; font-size: 0.95rem; line-height: 1.45; word-break: break-word; }
+  .status.ok { background: var(--pl); color: var(--pd); }
+  .status.warn { background: var(--warnl); color: var(--warn); }
+  .status.err { background: var(--errl); color: var(--err); }
+  .result img { width: 100%; border-radius: 12px; margin-top: 10px; display: block; }
+  .qty { display: none; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  .qty label { font-weight: 700; }
+  .stepper { display: inline-flex; border: 1px solid #E3E6EA; border-radius: 10px; overflow: hidden; }
+  .stepper button { width: 48px; height: 48px; border: 0; background: #EEF1F4; font-size: 1.4rem; }
+  .stepper input { width: 70px; height: 48px; border: 0; text-align: center; font: 700 1.2rem 'Sarabun', sans-serif; }
+  .qty small { color: var(--t2); }
+  .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .actions button { flex: 1 1 auto; min-height: 48px; border-radius: 12px; border: 1px solid #E3E6EA; background: #fff;
+                    font: 600 1rem 'Sarabun', sans-serif; color: var(--t); padding: 0 14px; }
+  .actions .primary { background: var(--p); border-color: var(--p); color: #fff; }
+  .actions button:disabled { opacity: .5; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <div class="name" id="itemName">กำลังโหลด...</div>
+  <div class="target" id="itemTarget"></div>
+</header>
+
+<div class="stage" id="stage">
+  <div id="reader"></div>
+  <div class="mask"><div class="box" id="box"><div class="laser"></div></div></div>
+  <div class="flash" id="flash"></div>
+  <div class="tools">
+    <button type="button" id="torchBtn" class="hidden" aria-label="ไฟฉาย">💡</button>
+    <button type="button" id="zoomBtn" class="hidden" aria-label="ซูม">🔍</button>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="status" id="status">กำลังเปิดกล้อง...</div>
+  <div class="result hidden" id="result">
+    <img id="snap" alt="รูปหลักฐานการสแกน">
+    <div class="qty" id="qtyBox">
+      <label for="qty">จำนวนที่พบจริง</label>
+      <span class="stepper">
+        <button type="button" data-step="-1">−</button>
+        <input type="number" id="qty" min="1" inputmode="numeric" value="1">
+        <button type="button" data-step="1">+</button>
+      </span>
+      <small id="qtyHint"></small>
+    </div>
+  </div>
+  <div class="actions">
+    <button type="button" id="startBtn" class="primary hidden">เปิดกล้อง</button>
+    <button type="button" id="saveBtn" class="primary hidden">บันทึก</button>
+    <button type="button" id="retryBtn" class="hidden">สแกนใหม่</button>
+    <button type="button" id="closeBtn">กลับหน้าชี้แจ้ง</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  // ---------- ข้อมูลรายการ (มาจากหน้าชี้แจ้ง ผ่าน # ของลิงก์ — ไม่ถูกส่งไปที่เซิร์ฟเวอร์ GitHub) ----------
+  var P = new URLSearchParams(location.hash.replace(/^#/, ''));
+  var item = {
+    api: P.get('api') || '', uid: P.get('uid') || '', token: P.get('token') || '',
+    branch: P.get('b') || '', productCode: P.get('pc') || '', serial: P.get('sn') || '',
+    stockDate: P.get('d') || '', name: P.get('name') || '', mode: P.get('m') === 'product' ? 'product' : 'serial',
+    expectedQty: Math.max(1, Number(P.get('exp')) || 1)
+  };
+  item.expected = item.mode === 'serial' ? item.serial : item.productCode;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var scanner = null, running = false, done = false, lastText = '', snapBlob = null, scanned = '', zoomOn = false, torchOn = false;
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function status(html, cls) { var el = $('status'); el.className = 'status' + (cls ? ' ' + cls : ''); el.innerHTML = html; }
+  function show(id, on) { $(id).classList.toggle('hidden', !on); }
+
+  // รหัสเดียวกันหลายรูปแบบ: ตัด 0 นำหน้า (UPC/EAN) และตัด S นำหน้า (บาร์โค้ด Serial ของ Apple = "S"+Serial)
+  function variants(v) {
+    var n = String(v == null ? '' : v).toUpperCase().replace(/[^A-Z0-9]/g, ''), out = {};
+    if (n) out[n] = 1;
+    if (/^\d+$/.test(n) && n.replace(/^0+/, '')) out[n.replace(/^0+/, '')] = 1;
+    if (/^S[A-Z0-9]{9,}$/.test(n)) out[n.substring(1)] = 1;
+    return out;
+  }
+  function match(a, b) { var va = variants(a), vb = variants(b); for (var k in va) if (vb[k]) return true; return false; }
+
+  // ---------- เริ่ม ----------
+  $('itemName').textContent = item.name || item.productCode || '-';
+  $('itemTarget').innerHTML = item.mode === 'serial'
+    ? 'สแกนบาร์โค้ด <b>(S) Serial No.</b> : <b>' + esc(item.serial) + '</b>'
+    : 'ไม่มี Serial → สแกน <b>รหัสสินค้า</b> : <b>' + esc(item.productCode) + '</b>';
+  if (!item.api || !item.uid || !item.token || !item.expected) {
+    status('ลิงก์ไม่ครบ — กรุณากลับไปหน้าชี้แจ้ง แล้วกด "สแกนยืนยัน" ที่รายการอีกครั้ง', 'err');
+    show('stage', false);
+    return;
+  }
+  if (/Line\//i.test(navigator.userAgent)) {
+    status('กำลังเปิดในแอป LINE — ถ้ากล้องไม่ขึ้น ให้แตะ ••• แล้วเลือก "เปิดในเบราว์เซอร์"', 'warn');
+  }
+
+  function startCamera() {
+    show('startBtn', false);
+    if (!window.Html5Qrcode) { status('โหลดตัวอ่านบาร์โค้ดไม่สำเร็จ — เช็คอินเทอร์เน็ตแล้วรีเฟรชหน้านี้', 'err'); return; }
+    if (scanner) { try { scanner.clear(); } catch (e) {} }
+    var F = window.Html5QrcodeSupportedFormats;
+    scanner = new Html5Qrcode('reader', {
+      verbose: false,
+      formatsToSupport: [F.CODE_128, F.CODE_39, F.CODE_93, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.ITF,
+                         F.QR_CODE, F.DATA_MATRIX, F.PDF_417],
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+    });
+    scanner.start(
+      { facingMode: 'environment' },
+      {
+        fps: 15,
+        qrbox: function (w, h) { return { width: Math.floor(w * 0.88), height: Math.max(90, Math.floor(Math.min(h * 0.34, 220))) }; },
+        videoConstraints: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      },
+      onDecoded, function () {}
+    ).then(function () {
+      running = true;
+      status(item.mode === 'serial'
+        ? 'เล็งเส้นแดงให้พาดบาร์โค้ด <b>(S) Serial No.</b> ถือนิ่งๆ ห่าง 10–20 ซม.'
+        : 'เล็งเส้นแดงให้พาดบาร์โค้ด<b>รหัสสินค้า</b> ถือนิ่งๆ ห่าง 10–20 ซม.', '');
+      try {
+        var caps = scanner.getRunningTrackCapabilities();
+        show('torchBtn', !!(caps && caps.torch));
+        if (caps && caps.zoom) { show('zoomBtn', true); zoomCaps = caps.zoom; }
+      } catch (e) {}
+    }).catch(function (err) {
+      var why = String((err && (err.name || err.message)) || err);
+      show('startBtn', true);
+      status(/NotAllowed|Permission|denied/i.test(why)
+        ? 'ยังไม่ได้อนุญาตกล้อง — แตะ <b>เปิดกล้อง</b> แล้วกด "อนุญาต"<br>(ถ้าเคยกดไม่อนุญาต: iPhone ไปที่ การตั้งค่า › Safari › กล้อง › อนุญาต)'
+        : 'เปิดกล้องไม่ได้: ' + esc(why), 'err');
+    });
+  }
+  var zoomCaps = null;
+
+  $('torchBtn').onclick = function () {
+    if (!scanner) return; torchOn = !torchOn;
+    scanner.applyVideoConstraints({ advanced: [{ torch: torchOn }] }).catch(function () {});
+    this.classList.toggle('on', torchOn);
+  };
+  $('zoomBtn').onclick = function () {
+    if (!scanner || !zoomCaps) return; zoomOn = !zoomOn;
+    var z = zoomOn ? Math.min(zoomCaps.max || 2, 2.5) : (zoomCaps.min || 1);
+    scanner.applyVideoConstraints({ advanced: [{ zoom: z }] }).catch(function () {});
+    this.classList.toggle('on', zoomOn);
+  };
+  $('startBtn').onclick = startCamera;
+
+  function onDecoded(text) {
+    if (done) return;
+    text = String(text || '').trim();
+    if (!text) return;
+    if (match(text, item.expected)) { done = true; onMatch(text); return; }
+    if (text === lastText) return;
+    lastText = text;
+    if (item.mode === 'serial' && match(text, item.productCode)) {
+      status('อ่านได้ <b>' + esc(text) + '</b> = รหัสสินค้า ไม่ใช่ Serial — เลื่อนไปที่บาร์โค้ด <b>(S) Serial No.</b>', 'warn');
+    } else {
+      status('อ่านได้ <b>' + esc(text) + '</b> — <b>ไม่ตรง</b>กับ ' + esc(item.expected) + '<br>ถ้าหาไม่เจอ กลับไปหน้าชี้แจ้งแล้ว "แนบรูปแทน"', 'err');
+    }
+  }
+
+  function beep() {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      var ac = new AC(), o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = 1400; g.gain.value = 0.15; o.connect(g); g.connect(ac.destination);
+      o.start(); o.stop(ac.currentTime + 0.12); setTimeout(function () { ac.close && ac.close(); }, 300);
+    } catch (e) {}
+  }
+
+  function snapshot(text) {
+    var v = document.querySelector('#reader video');
+    if (!v || !v.videoWidth) return Promise.resolve(null);
+    var w = v.videoWidth, h = v.videoHeight, s = Math.min(1, 1600 / Math.max(w, h));
+    var cw = Math.round(w * s), ch = Math.round(h * s), bar = Math.max(64, Math.round(cw * 0.12));
+    var cv = document.createElement('canvas'); cv.width = cw; cv.height = ch + bar;
+    var ctx = cv.getContext('2d');
+    ctx.drawImage(v, 0, 0, cw, ch);
+    ctx.fillStyle = '#0E4C52'; ctx.fillRect(0, ch, cw, bar);
+    ctx.fillStyle = '#fff';
+    ctx.font = '700 ' + Math.round(bar * 0.34) + 'px Sarabun, sans-serif';
+    ctx.fillText('✓ SCAN MATCH  ' + (item.mode === 'serial' ? 'Serial' : 'Product') + ': ' + text, bar * 0.18, ch + bar * 0.44, cw - bar * 0.3);
+    var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+    var ts = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    ctx.font = '400 ' + Math.round(bar * 0.24) + 'px Sarabun, sans-serif';
+    ctx.fillText('สาขา ' + item.branch + ' · นับสต็อก ' + item.stockDate + ' · ' + ts + ' · ' + item.uid, bar * 0.18, ch + bar * 0.82, cw - bar * 0.3);
+    return new Promise(function (res) { cv.toBlob(function (b) { res(b); }, 'image/jpeg', 0.85); });
+  }
+
+  function stopCamera() {
+    if (!scanner || !running) return Promise.resolve();
+    running = false;
+    return scanner.stop().catch(function () {});
+  }
+
+  function onMatch(text) {
+    scanned = text;
+    try { navigator.vibrate && navigator.vibrate(120); } catch (e) {}
+    beep();
+    $('box').classList.add('hit');
+    var fl = $('flash'); fl.classList.add('on'); setTimeout(function () { fl.classList.remove('on'); }, 60);
+    snapshot(text).then(function (b) {
+      snapBlob = b;
+      return stopCamera();
+    }).then(function () {
+      show('stage', false);
+      show('result', true);
+      if (snapBlob) $('snap').src = URL.createObjectURL(snapBlob);
+      if (item.mode === 'product') {
+        $('qty').value = item.expectedQty; $('qty').max = item.expectedQty;
+        $('qtyHint').textContent = '(ระบบแจ้งไม่ตรง ' + item.expectedQty + ' ชิ้น)';
+        $('qtyBox').style.display = 'flex';
+        show('saveBtn', true); show('retryBtn', true);
+        status('✅ <b>สแกนสำเร็จ</b> — รหัสสินค้า ' + esc(text) + ' ตรงกับรายการ<br>ใส่จำนวนที่พบจริง แล้วกด <b>บันทึก</b>', 'ok');
+      } else {
+        status('✅ <b>สแกนสำเร็จ</b> — Serial ' + esc(text) + ' ตรง กำลังบันทึก...', 'ok');
+        submit(1);
+      }
+    });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-step]'), function (btn) {
+    btn.onclick = function () {
+      var q = $('qty'), max = Number(q.max) || 9999;
+      q.value = Math.min(max, Math.max(1, (Number(q.value) || 1) + Number(btn.dataset.step)));
+    };
+  });
+  $('saveBtn').onclick = function () {
+    var q = Math.floor(Number($('qty').value));
+    if (!q || q < 1) { alert('กรุณาใส่จำนวนอย่างน้อย 1'); return; }
+    if (q > item.expectedQty) { alert('จำนวนต้องไม่เกิน ' + item.expectedQty + ' ชิ้น'); return; }
+    submit(q);
+  };
+  $('retryBtn').onclick = function () { location.reload(); };
+  $('closeBtn').onclick = function () {
+    window.close();
+    setTimeout(function () { status('ปิดแท็บนี้ แล้วกลับไปที่หน้าชี้แจ้งได้เลย (รายการจะอัปเดตเอง)', ''); }, 300);
+  };
+
+  function blobToB64(b) {
+    return new Promise(function (res, rej) {
+      if (!b) { res(''); return; }
+      var r = new FileReader(); r.onload = function () { res(String(r.result).split(',')[1]); }; r.onerror = rej; r.readAsDataURL(b);
+    });
+  }
+
+  function submit(qty, attempt) {
+    attempt = attempt || 0;
+    show('saveBtn', false); show('retryBtn', false); $('qtyBox').style.display = 'none';
+    status('⏳ กำลังบันทึก' + (item.mode === 'product' ? ' (พบ ' + qty + ' ชิ้น)' : '') + '...', 'ok');
+    blobToB64(snapBlob).then(function (b64) {
+      // ส่งเป็น text/plain → ไม่ติด CORS preflight ของ Apps Script
+      return fetch(item.api, {
+        method: 'POST', redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'scanSubmit', uid: item.uid, token: item.token,
+          branch: item.branch, productCode: item.productCode, serial: item.serial, stockDate: item.stockDate,
+          mode: item.mode, scanned: scanned, qty: qty, expectedQty: item.expectedQty, image: b64
+        })
+      });
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res && res.success) {
+        status('✅ <b>บันทึกแล้ว</b> — ' + esc(res.message || '') + '<br>แตะ <b>กลับหน้าชี้แจ้ง</b> เพื่อทำรายการต่อไป', 'ok');
+        $('closeBtn').classList.add('primary');
+        setTimeout(function () { window.close(); }, 1800);
+      } else {
+        status('❌ ' + esc((res && res.message) || 'บันทึกไม่สำเร็จ'), 'err');
+        if (!(res && res.code === 'AUTH')) { show('saveBtn', true); $('saveBtn').textContent = 'ลองบันทึกอีกครั้ง'; $('saveBtn').onclick = function () { submit(qty); }; }
+      }
+    }).catch(function (err) {
+      if (attempt < 2) { setTimeout(function () { submit(qty, attempt + 1); }, 2500 * (attempt + 1)); return; }
+      status('❌ ส่งข้อมูลไม่สำเร็จ (เน็ตหลุด?) — ' + esc(String(err && err.message || err)), 'err');
+      show('saveBtn', true); $('saveBtn').textContent = 'ลองบันทึกอีกครั้ง'; $('saveBtn').onclick = function () { submit(qty); };
+    });
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden && running && !done) { stopCamera(); show('startBtn', true); status('กล้องหยุดเพราะออกจากหน้าจอ — แตะ <b>เปิดกล้อง</b> เพื่อสแกนต่อ', 'warn'); }
+  });
+
+  startCamera();
+})();
+</script>
+</body>
+</html>
